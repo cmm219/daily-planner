@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# OS / editor
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
+
+# Local user data lives OUTSIDE the repo (C:/Users/<you>/daily_planner.json),
+# but ignore any stray copy that lands here.
+daily_planner.json
+*.local.json

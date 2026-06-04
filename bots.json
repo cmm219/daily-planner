@@ -1,0 +1,16 @@
+{
+  "project": "daily-planner",
+  "notes_root": "C:/Users/Cmcna/Dev/notes/projects/daily-planner",
+  "bots": [
+    {
+      "id": "daily-planner-app",
+      "name": "Daily Planner desktop app",
+      "runtime_path": "daily_planner.py",
+      "state_file": "control/STATE.md",
+      "tasks_file": "control/TASKS.md",
+      "backlog_file": "tasks/backlog.md",
+      "sessions_dir": "sessions",
+      "artifacts": []
+    }
+  ]
+}
