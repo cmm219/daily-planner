@@ -22,13 +22,23 @@ function Read-VersionFile {
 function Get-MasterVersion {
     $repoRoot = Get-RepoRoot
     $versionPath = Join-Path $repoRoot 'VERSION'
-    # Try origin/main first, fall back to local main, then HEAD VERSION
+    # Try origin/main first, fall back to local main, then HEAD VERSION.
+    # Native git stderr can trip $ErrorActionPreference='Stop', so soften it
+    # locally and verify the ref exists before reading it.
     $candidates = @('origin/main:VERSION', 'main:VERSION')
-    foreach ($ref in $candidates) {
-        $output = (& git show $ref 2>$null)
-        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($output)) {
-            return $output.Trim()
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        foreach ($ref in $candidates) {
+            & git cat-file -e $ref 2>$null
+            if ($LASTEXITCODE -ne 0) { continue }
+            $output = (& git show $ref 2>$null)
+            if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($output)) {
+                return $output.Trim()
+            }
         }
+    } finally {
+        $ErrorActionPreference = $prev
     }
     return Read-VersionFile -Path $versionPath
 }
@@ -37,9 +47,18 @@ function Get-OpenPRVersions {
     # Returns array of VERSION strings claimed by other open PRs, via gh CLI.
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { return @() }
     $repoRoot = Get-RepoRoot
-    $currentBranch = (& git -C $repoRoot rev-parse --abbrev-ref HEAD).Trim()
-    $prs = & gh pr list --state open --json number,headRefName --jq '.[] | "\(.number)|\(.headRefName)"' 2>$null
-    if ($LASTEXITCODE -ne 0) { return @() }
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        # No remote => no PRs to consider (and gh/git would error).
+        $remotes = (& git -C $repoRoot remote 2>$null)
+        if ([string]::IsNullOrWhiteSpace(($remotes -join ''))) { return @() }
+        $currentBranch = (& git -C $repoRoot rev-parse --abbrev-ref HEAD 2>$null).Trim()
+        $prs = & gh pr list --state open --json number,headRefName --jq '.[] | "\(.number)|\(.headRefName)"' 2>$null
+        if ($LASTEXITCODE -ne 0) { return @() }
+    } finally {
+        $ErrorActionPreference = $prev
+    }
     $versions = @()
     foreach ($line in $prs) {
         if ([string]::IsNullOrWhiteSpace($line)) { continue }

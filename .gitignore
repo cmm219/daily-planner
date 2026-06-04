@@ -16,3 +16,8 @@ Thumbs.db
 # but ignore any stray copy that lands here.
 daily_planner.json
 *.local.json
+
+# Local QA scratch
+.qa_out.log
+.qa_err.log
+.mockups/
