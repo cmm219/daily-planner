@@ -21,3 +21,4 @@ daily_planner.json
 .qa_out.log
 .qa_err.log
 .mockups/
+.gstack/

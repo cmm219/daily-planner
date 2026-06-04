@@ -13,6 +13,7 @@ Hotkeys:
 """
 
 import flet as ft
+import asyncio
 import json
 import copy
 import colorsys
@@ -199,6 +200,7 @@ def get_default_data():
         ],
         "activeTab": tab_id,
         "settings": get_default_settings(),
+        "history": {},
     }
 
 
@@ -251,6 +253,9 @@ def migrate_data(data):
         for tab in data["tabs"]:
             if "data" in tab:
                 tab["data"] = migrate_planner_data(tab["data"])
+        # Daily history store (Feature 3): always present, never destructive.
+        if not isinstance(data.get("history"), dict):
+            data["history"] = {}
         return data
 
     # Old format: single planner - convert to tabs
@@ -260,7 +265,8 @@ def migrate_data(data):
         "tabs": [
             {"id": tab_id, "name": today, "data": planner_data}
         ],
-        "activeTab": tab_id
+        "activeTab": tab_id,
+        "history": {},
     }
 
 
@@ -276,6 +282,198 @@ def ensure_section_data(all_data, settings):
         for key in custom_keys:
             if key not in data:
                 data[key] = [{"text": "", "dateAdded": today}]
+
+
+# --- Daily history store + monthly recap (Phase 3) ----------------------
+#
+# all_data["history"] is a map keyed by "YYYY-MM-DD" -> a lightweight snapshot of
+# that day's active planner: per-section row text (+ done flags) and task_score.
+# It rides the existing save_data() path (same JSON, no new files) and is never
+# destructive. Recap reads this map to build a monthly look-back.
+
+# Keys that are structural, not day content, so they're left out of a snapshot.
+HISTORY_SKIP_KEYS = {"archive", "lastUpdated", "task_score"}
+
+
+def planner_is_empty(data):
+    """True if a planner tab has nothing worth archiving (all rows blank, no
+    score). Used to skip snapshotting a blank day."""
+    if not isinstance(data, dict):
+        return True
+    if str(data.get("task_score", "")).strip():
+        return False
+    for key, val in data.items():
+        if key in HISTORY_SKIP_KEYS:
+            continue
+        if isinstance(val, list):
+            for item in val:
+                if isinstance(item, dict) and item.get("text", "").strip():
+                    return False
+                if isinstance(item, str) and item.strip():
+                    return False
+    return True
+
+
+def make_history_snapshot(data, date_str):
+    """Build a dated snapshot of a planner tab: non-empty section rows (text +
+    done) + task_score + date. Custom sections are included; archive/lastUpdated
+    are not."""
+    sections = {}
+    for key, val in data.items():
+        if key in HISTORY_SKIP_KEYS:
+            continue
+        if not isinstance(val, list):
+            continue
+        rows = []
+        for item in val:
+            if isinstance(item, dict):
+                text = item.get("text", "")
+                if text.strip():
+                    row = {"text": text}
+                    if "done" in item:
+                        row["done"] = bool(item.get("done", False))
+                    rows.append(row)
+            elif isinstance(item, str) and item.strip():
+                rows.append({"text": item})
+        if rows:
+            sections[key] = rows
+    return {
+        "date": date_str,
+        "task_score": data.get("task_score", ""),
+        "sections": sections,
+    }
+
+
+def update_history(all_data, active_data, date_str):
+    """Idempotently record date_str's snapshot in all_data['history'].
+    Last write wins for the day; blank planners are skipped (not archived).
+    Returns the history map."""
+    history = all_data.get("history")
+    if not isinstance(history, dict):
+        history = {}
+        all_data["history"] = history
+    if planner_is_empty(active_data):
+        return history
+    history[date_str] = make_history_snapshot(active_data, date_str)
+    return history
+
+
+def _month_of(date_str):
+    """'YYYY-MM' for a 'YYYY-MM-DD' key, or '' if it doesn't look like one."""
+    if isinstance(date_str, str) and len(date_str) >= 7 and date_str[4] == "-":
+        return date_str[:7]
+    return ""
+
+
+def available_months(all_data):
+    """Sorted (newest first) list of 'YYYY-MM' that have either a history entry
+    or an archived/completed task — i.e. months a recap could show."""
+    months = set()
+    for d in (all_data.get("history") or {}):
+        m = _month_of(d)
+        if m:
+            months.add(m)
+    for tab in all_data.get("tabs", []):
+        data = tab.get("data") if isinstance(tab, dict) else None
+        if not isinstance(data, dict):
+            continue
+        for entry in data.get("archive", []):
+            m = _month_of(entry.get("dateCompleted", "")) if isinstance(entry, dict) else ""
+            if m:
+                months.add(m)
+    return sorted(months, reverse=True)
+
+
+def aggregate_month(all_data, year_month):
+    """Roll up one month for the recap. Pulls gratitude / lessons / task-score /
+    days-logged from history snapshots, and completed tasks from every tab's
+    archive (by dateCompleted). Returns a plain dict, GUI-free and testable."""
+    history = all_data.get("history") or {}
+    dates = sorted(d for d in history if _month_of(d) == year_month)
+
+    gratitude, lessons, scores = [], [], []
+    for d in dates:
+        snap = history.get(d) or {}
+        secs = snap.get("sections", {}) if isinstance(snap, dict) else {}
+        for row in secs.get("gratitude", []):
+            t = (row.get("text", "") if isinstance(row, dict) else str(row)).strip()
+            if t:
+                gratitude.append({"date": d, "text": t})
+        for row in secs.get("lesson", []):
+            t = (row.get("text", "") if isinstance(row, dict) else str(row)).strip()
+            if t:
+                lessons.append({"date": d, "text": t})
+        sc = str(snap.get("task_score", "")).strip()
+        try:
+            scores.append(float(sc))
+        except (TypeError, ValueError):
+            pass
+
+    completed = []
+    for tab in all_data.get("tabs", []):
+        data = tab.get("data") if isinstance(tab, dict) else None
+        if not isinstance(data, dict):
+            continue
+        for entry in data.get("archive", []):
+            if isinstance(entry, dict) and _month_of(entry.get("dateCompleted", "")) == year_month:
+                completed.append(entry)
+    completed.sort(key=lambda e: e.get("dateCompleted", ""))
+
+    avg_score = round(sum(scores) / len(scores), 1) if scores else None
+    return {
+        "month": year_month,
+        "dates": dates,
+        "days_logged": len(dates),
+        "gratitude": gratitude,
+        "lessons": lessons,
+        "completed": completed,
+        "avg_score": avg_score,
+        "score_count": len(scores),
+    }
+
+
+def build_recap_cards(agg):
+    """Turn a month aggregate into an ordered list of playback cards. Each card:
+    {kind, title, lines}. Pure/testable; the playback UI animates these."""
+    month = agg.get("month", "")
+    try:
+        label = datetime.strptime(month + "-01", "%Y-%m-%d").strftime("%B %Y")
+    except ValueError:
+        label = month
+
+    cards = []
+    days = agg.get("days_logged", 0)
+    cards.append({
+        "kind": "intro", "title": label,
+        "lines": [f"{days} day{'s' if days != 1 else ''} logged this month"],
+    })
+
+    grats = [g["text"] for g in agg.get("gratitude", [])]
+    if grats:
+        cards.append({"kind": "count", "title": "What went right",
+                      "lines": [f"{len(grats)} moment{'s' if len(grats) != 1 else ''} of gratitude"]})
+        cards.append({"kind": "gratitude", "title": "Gratitude", "lines": grats})
+
+    lessons = [l["text"] for l in agg.get("lessons", [])]
+    if lessons:
+        cards.append({"kind": "lessons", "title": "Lessons & awareness", "lines": lessons})
+
+    completed = agg.get("completed", [])
+    if completed:
+        cards.append({"kind": "count", "title": "Done",
+                      "lines": [f"{len(completed)} thing{'s' if len(completed) != 1 else ''} you got done this month"]})
+        cards.append({"kind": "completed", "title": "Completed tasks",
+                      "lines": [c.get("text", "") for c in completed if c.get("text", "").strip()]})
+
+    if agg.get("avg_score") is not None:
+        cards.append({"kind": "score", "title": "Average task score",
+                      "lines": [f"{agg['avg_score']} / 10  (over {agg['score_count']} day{'s' if agg['score_count'] != 1 else ''})"]})
+
+    if len(cards) == 1:
+        cards[0]["lines"].append("Nothing logged yet — fill in a day and it'll show up here.")
+    else:
+        cards.append({"kind": "outro", "title": label, "lines": ["That was your month."]})
+    return cards
 
 
 class DailyPlanner:
@@ -417,7 +615,11 @@ class DailyPlanner:
     def save_data(self):
         """Save all data to JSON file"""
         # Update lastUpdated on current tab's data
-        self.data["lastUpdated"] = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now().strftime("%Y-%m-%d")
+        self.data["lastUpdated"] = today
+        # Daily history snapshot: record the active day under today's date on
+        # every save (idempotent, last-write-wins; blank days skipped).
+        update_history(self.all_data, self.data, today)
         # Backup
         try:
             with open(DATA_FILE, 'r') as f:
@@ -523,6 +725,14 @@ class DailyPlanner:
             on_click=self.toggle_theme,
         )
 
+        # Monthly recap (calendar) button
+        recap_btn = ft.IconButton(
+            icon=ft.Icons.CALENDAR_MONTH,
+            icon_color=self.theme["text_dim"],
+            tooltip="Month in Review (Ctrl+M)",
+            on_click=self.open_recap,
+        )
+
         # Settings (gear) button
         settings_btn = ft.IconButton(
             icon=ft.Icons.SETTINGS,
@@ -533,7 +743,7 @@ class DailyPlanner:
 
         return ft.Container(
             content=ft.Row(
-                [ft.Row(tabs, spacing=2), ft.Row([theme_btn, settings_btn], spacing=0)],
+                [ft.Row(tabs, spacing=2), ft.Row([theme_btn, recap_btn, settings_btn], spacing=0)],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             ),
             padding=ft.Padding(0, 0, 0, 10),
@@ -588,7 +798,7 @@ class DailyPlanner:
         controls += [
             ft.Container(height=20),
             ft.Text(
-                "Ctrl+T: New tab | Ctrl+R: Rename | Ctrl+W: Close | Ctrl+Enter: Add row | Ctrl+,: Settings",
+                "Ctrl+T: New tab | Ctrl+R: Rename | Ctrl+Enter: Add row | Ctrl+M: Recap | Ctrl+,: Settings",
                 size=11,
                 color=self.theme["text_dim"],
                 font_family=self.font_family,
@@ -1254,6 +1464,248 @@ class DailyPlanner:
         self._refresh_settings_pane()
         self.page.update()
 
+    # --- Monthly recap (Month in Review + playback) ---------------------
+
+    def open_recap(self, e=None):
+        """Open the Month-in-Review dialog (read-only look-back over a month)."""
+        months = available_months(self.all_data)
+        current = datetime.now().strftime("%Y-%m")
+        if current not in months:
+            months = [current] + months
+        self._recap_month = current if current in months else (months[0] if months else current)
+
+        self._recap_pane = ft.Container(expand=True)
+        self._recap_render()
+
+        def on_pick(ev):
+            self._recap_month = ev.control.value
+            self._recap_render()
+            self.page.update()
+
+        month_dd = ft.Dropdown(
+            value=self._recap_month,
+            options=[ft.DropdownOption(key=m, text=self._recap_month_label(m)) for m in months],
+            text_size=13, width=200, on_select=on_pick,
+            bgcolor=self.theme["bg"], color=self.theme["text"],
+            border_color=self.theme["border"],
+        )
+
+        title = ft.Row([
+            ft.Icon(ft.Icons.CALENDAR_MONTH, color=self.theme["accent"], size=18),
+            ft.Text("month in review", size=14, color=self.theme["text"],
+                    font_family=self.font_family, weight=ft.FontWeight.BOLD),
+            ft.Container(expand=True),
+            month_dd,
+        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+
+        self._recap_content = ft.Container(self._recap_pane, width=540, height=420)
+
+        self._recap_dialog = ft.AlertDialog(
+            modal=True, bgcolor=self.theme["panel"], title=title,
+            content=self._recap_content,
+            actions=[
+                ft.TextButton("Close", on_click=lambda ev: self.page.pop_dialog(),
+                              style=ft.ButtonStyle(color=self.theme["text_dim"])),
+                ft.FilledButton("▶ Play", on_click=self._recap_play,
+                                style=ft.ButtonStyle(bgcolor=self.theme["accent"], color=self.theme["bg"])),
+            ],
+        )
+        self.page.show_dialog(self._recap_dialog)
+
+    def _recap_month_label(self, year_month):
+        try:
+            return datetime.strptime(year_month + "-01", "%Y-%m-%d").strftime("%B %Y")
+        except ValueError:
+            return year_month
+
+    def _recap_block(self, title, items, dim_dates=True):
+        """A titled, scrollable list block for the static Month-in-Review view."""
+        rows = [ft.Text(title, size=max(self.body_size, self.header_size - 3),
+                        color=self.theme["header"], weight=self.header_weight,
+                        font_family=self.font_family)]
+        if not items:
+            rows.append(ft.Text("  (none logged)", size=self.body_size,
+                                color=self.theme["text_dim"], font_family=self.font_family))
+        for it in items:
+            if isinstance(it, dict):
+                date = it.get("date", "")
+                text = it.get("text", "")
+            else:
+                date, text = "", str(it)
+            line = ft.Row([
+                ft.Text("•", size=self.body_size, color=self.theme["accent"], font_family=self.font_family),
+                ft.Text(text, size=self.body_size, color=self.theme["text"],
+                        font_family=self.font_family, expand=True, selectable=True),
+            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START)
+            if dim_dates and date:
+                line.controls.append(ft.Text(date[5:], size=11, color=self.theme["text_dim"],
+                                             font_family=self.font_family))
+            rows.append(line)
+        return ft.Column(rows, spacing=4)
+
+    def _recap_render(self):
+        """(Re)build the static Month-in-Review body for the current month."""
+        agg = aggregate_month(self.all_data, self._recap_month)
+        score = f"{agg['avg_score']} / 10" if agg["avg_score"] is not None else "—"
+
+        stat = ft.Row([
+            self._recap_stat(str(agg["days_logged"]), "days logged"),
+            self._recap_stat(str(len(agg["completed"])), "completed"),
+            self._recap_stat(score, "avg score"),
+        ], spacing=10)
+
+        completed_items = [{"date": c.get("dateCompleted", ""), "text": c.get("text", "")}
+                           for c in agg["completed"]]
+
+        body = ft.Column([
+            stat,
+            ft.Container(height=6),
+            self._recap_block("GRATITUDE — what went right", agg["gratitude"]),
+            ft.Container(height=8),
+            self._recap_block("LESSONS / AWARENESS", agg["lessons"]),
+            ft.Container(height=8),
+            self._recap_block("COMPLETED / ARCHIVED", completed_items),
+        ], spacing=4, scroll=ft.ScrollMode.AUTO)
+        self._recap_pane.content = body
+
+    def _recap_stat(self, value, label):
+        return ft.Container(
+            content=ft.Column([
+                ft.Text(value, size=self.header_size + 4, color=self.theme["accent"],
+                        weight=ft.FontWeight.BOLD, font_family=self.font_family),
+                ft.Text(label, size=11, color=self.theme["text_dim"], font_family=self.font_family),
+            ], spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=ft.Padding(14, 8, 14, 8), bgcolor=self.theme["bg"],
+            border=ft.Border.all(1, self.theme["border"]), border_radius=8, expand=True,
+        )
+
+    def _recap_play(self, e=None):
+        """Playback mode: auto-advance through recap cards with a terminal type-on
+        effect and soft fades. Pause / prev / next controls. No video file."""
+        agg = aggregate_month(self.all_data, self._recap_month)
+        cards = build_recap_cards(agg)
+        state = {"i": 0, "paused": False, "token": 0, "typing": False}
+
+        title_txt = ft.Text("", size=self.header_size + 2, color=self.theme["header"],
+                             weight=ft.FontWeight.BOLD, font_family=self.font_family)
+        body_txt = ft.Text("", size=self.body_size + 1, color=self.theme["text"],
+                           font_family=self.font_family, selectable=True)
+        counter = ft.Text("", size=11, color=self.theme["text_dim"], font_family=self.font_family)
+        card_box = ft.Container(
+            content=ft.Column([title_txt, ft.Container(height=8), body_txt],
+                              spacing=2, scroll=ft.ScrollMode.AUTO),
+            width=480, height=300, padding=ft.Padding(20, 18, 20, 18),
+            bgcolor=self.theme["bg"], border=ft.Border.all(1, self.theme["border"]),
+            border_radius=10, opacity=1, animate_opacity=300,
+        )
+
+        def full_text(card):
+            return "\n".join(card.get("lines", []))
+
+        async def run_card(idx, token):
+            card = cards[idx]
+            counter.value = f"{idx + 1} / {len(cards)}"
+            title_txt.value = card.get("title", "")
+            body_txt.value = ""
+            # fade in
+            card_box.opacity = 1
+            self.page.update()
+            text = full_text(card)
+            state["typing"] = True
+            # type-on effect
+            for ch in text:
+                if token != state["token"]:
+                    return
+                while state["paused"] and token == state["token"]:
+                    await asyncio.sleep(0.08)
+                if token != state["token"]:
+                    return
+                body_txt.value += ch
+                self.page.update()
+                await asyncio.sleep(0.012 if ch != "\n" else 0.06)
+            state["typing"] = False
+            # hold, then auto-advance unless paused / at end
+            held = 0.0
+            while held < 2.6:
+                if token != state["token"]:
+                    return
+                if not state["paused"]:
+                    held += 0.1
+                await asyncio.sleep(0.1)
+            if token == state["token"] and idx < len(cards) - 1 and not state["paused"]:
+                go(idx + 1)
+
+        def go(idx):
+            idx = max(0, min(len(cards) - 1, idx))
+            state["i"] = idx
+            state["token"] += 1
+            token = state["token"]
+            # soft fade between cards
+            card_box.opacity = 0
+            self.page.update()
+            self.page.run_task(run_card, idx, token)
+
+        def toggle_pause(ev=None):
+            state["paused"] = not state["paused"]
+            pause_btn.icon = ft.Icons.PLAY_ARROW if state["paused"] else ft.Icons.PAUSE
+            # If unpausing past a fully-typed card at the end-hold, nothing else needed.
+            self.page.update()
+
+        def prev(ev=None):
+            go(state["i"] - 1)
+
+        def nxt(ev=None):
+            # If still typing, finish instantly; else advance.
+            if state["typing"]:
+                state["token"] += 1
+                token = state["token"]
+                cards_idx = state["i"]
+                body_txt.value = full_text(cards[cards_idx])
+                title_txt.value = cards[cards_idx].get("title", "")
+                state["typing"] = False
+                self.page.update()
+
+                async def hold_then_idle():
+                    await asyncio.sleep(0.1)
+                self.page.run_task(hold_then_idle)
+            else:
+                go(state["i"] + 1)
+
+        pause_btn = ft.IconButton(icon=ft.Icons.PAUSE, icon_color=self.theme["accent"],
+                                  tooltip="Pause / resume", on_click=toggle_pause)
+        controls = ft.Row([
+            ft.IconButton(icon=ft.Icons.SKIP_PREVIOUS, icon_color=self.theme["text_dim"],
+                          tooltip="Previous", on_click=prev),
+            pause_btn,
+            ft.IconButton(icon=ft.Icons.SKIP_NEXT, icon_color=self.theme["text_dim"],
+                          tooltip="Next", on_click=nxt),
+            ft.Container(expand=True),
+            counter,
+        ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+
+        play_dialog = ft.AlertDialog(
+            modal=True, bgcolor=self.theme["panel"],
+            title=ft.Text(self._recap_month_label(self._recap_month), size=14,
+                          color=self.theme["text"], font_family=self.font_family,
+                          weight=ft.FontWeight.BOLD),
+            content=ft.Container(ft.Column([card_box, ft.Container(height=8), controls],
+                                          spacing=4, tight=True), width=520, height=380),
+            actions=[
+                ft.TextButton("Done", on_click=lambda ev: (self._recap_stop(state), self.page.pop_dialog()),
+                              style=ft.ButtonStyle(color=self.theme["text_dim"])),
+            ],
+        )
+        self._recap_play_state = state
+        self.page.show_dialog(play_dialog)
+        go(0)
+
+    def _recap_stop(self, state):
+        """Cancel any in-flight playback animation by bumping its token."""
+        try:
+            state["token"] += 1
+        except Exception:
+            pass
+
     # --- Event Handlers ---
 
     def on_field_focus(self, e, section_key, index):
@@ -1618,6 +2070,8 @@ class DailyPlanner:
                 self.rename_tab_dialog(active_id)
         elif e.ctrl and e.key == ",":
             self.open_settings()
+        elif e.ctrl and e.key.lower() == "m":
+            self.open_recap()
 
 
 def main(page: ft.Page):

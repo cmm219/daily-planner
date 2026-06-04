@@ -15,6 +15,19 @@ Bump types:
 
 ## [Unreleased]
 
+## [0.3.0.0] - 2026-06-04
+
+### Added
+- Daily history store: every save snapshots today's entry into `history` (keyed by date), idempotent and non-destructive, skipping empty days and including custom sections. Rides the existing JSON save path.
+- Month in Review screen: a Month-in-Review dialog (calendar icon or Ctrl+M) that aggregates a month's history into stat cards (days logged, completed/archived count, average score) plus gratitude, lessons, and completed-task recaps with per-entry dates; a month dropdown switches between logged months.
+- Recap playback mode: a "Play" mode that animates the month recap card-by-card with typed-on text and fade, with prev/pause/next controls and progress (e.g. 4 / 8).
+- External AI-helper skill (`.claude/skills/planner-ai-helper/`) plus `scripts/planner_edit.py`, a safe CLI control surface that backs up before every write and only appends rows or permutes a single section (summary/add/reorder/set-score). No API keys; it edits the JSON and the app reloads.
+- Headless QA suites `tests/test_history_recap.py` and `tests/test_planner_edit.py` covering the history model, month aggregation, recap UI handlers, and the edit CLI safety contract (102 tests total).
+- Visual QA harness `scripts/qa_visual.py` serves the real app in web mode against a temp data file; `?qa=`/`QA_VIEW` open the recap and playback states for screenshotting.
+
+### Changed
+- `planner-edit-cli` registered in `bots.json`/`BOTS.md` as the AI-helper control surface (`runtime: not-launched`).
+
 ## [0.2.0.0] - 2026-06-04
 
 ### Added

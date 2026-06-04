@@ -12,6 +12,12 @@ and expected artifact names.
 | Runtime id | Name | Runtime path | Notes scope |
 | --- | --- | --- | --- |
 | `daily-planner-app` | Daily Planner desktop app | `daily_planner.py` | `C:/Users/Cmcna/Dev/notes/projects/daily-planner` |
+| `planner-edit-cli` | Planner edit CLI (AI-helper control surface) | `scripts/planner_edit.py` | `C:/Users/Cmcna/Dev/notes/projects/daily-planner` |
+
+`planner-edit-cli` is the safe edit surface used by the external `planner-ai-helper`
+skill (`.claude/skills/planner-ai-helper/`). It backs up before every write and
+only appends/permutes one section; it starts no long-running process
+(`runtime: not-launched` unless actually invoked).
 
 ## Audit Tokens
 
