@@ -6,7 +6,7 @@ Two layers, both GUI-free where possible:
   2. Handler-level QA against a stub Page (Flet 0.80 renders to canvas, so we
      drive the real open_recap / playback handlers and assert side effects).
 
-The real C:\\Users\\Cmcna\\daily_planner.json is never touched.
+The user's normal planner data file is never touched.
 """
 import json
 import os

@@ -19,10 +19,34 @@ import copy
 import colorsys
 import os
 import uuid
+from pathlib import Path
 from datetime import datetime
 
 # Data file
-DATA_FILE = r"C:\Users\Cmcna\daily_planner.json"
+APP_NAME = "DailyPlanner"
+DATA_FILE_ENV = "DAILY_PLANNER_DATA_FILE"
+
+
+def get_default_data_file():
+    """Return the default user-data path without touching the repository."""
+    override = os.environ.get(DATA_FILE_ENV)
+    if override:
+        return os.path.abspath(os.path.expanduser(override))
+    if os.name == "nt":
+        base = os.environ.get("APPDATA") or os.path.join(Path.home(), "AppData", "Roaming")
+        return os.path.join(base, APP_NAME, "daily_planner.json")
+    return os.path.join(Path.home(), ".daily_planner", "daily_planner.json")
+
+
+DATA_FILE = get_default_data_file()
+
+
+def ensure_data_dir(path=None):
+    """Create the parent folder for the planner data file when needed."""
+    target = path or DATA_FILE
+    parent = os.path.dirname(os.path.abspath(target))
+    if parent:
+        os.makedirs(parent, exist_ok=True)
 
 # Color slots every theme defines. Order drives the Colors settings subtab.
 COLOR_SLOTS = [
@@ -614,6 +638,7 @@ class DailyPlanner:
 
     def save_data(self):
         """Save all data to JSON file"""
+        ensure_data_dir()
         # Update lastUpdated on current tab's data
         today = datetime.now().strftime("%Y-%m-%d")
         self.data["lastUpdated"] = today

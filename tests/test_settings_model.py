@@ -113,6 +113,30 @@ def test_save_load_round_trip(tmp_path, monkeypatch):
     assert s["header_bold"] is False
 
 
+def test_data_file_env_override(monkeypatch, tmp_path):
+    custom = tmp_path / "custom-planner.json"
+    monkeypatch.setenv(dp.DATA_FILE_ENV, str(custom))
+
+    assert dp.get_default_data_file() == str(custom)
+
+
+def test_default_data_file_is_outside_repo(monkeypatch):
+    monkeypatch.delenv(dp.DATA_FILE_ENV, raising=False)
+
+    path = dp.get_default_data_file()
+
+    assert path.endswith("daily_planner.json")
+    assert os.path.dirname(os.path.abspath(__file__)) not in os.path.abspath(path)
+
+
+def test_ensure_data_dir_creates_parent(tmp_path):
+    target = tmp_path / "nested" / "daily_planner.json"
+
+    dp.ensure_data_dir(str(target))
+
+    assert target.parent.exists()
+
+
 def test_normalize_is_idempotent():
     data = {"theme": "light"}
     first = copy.deepcopy(dp.normalize_settings(data))

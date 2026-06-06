@@ -12,13 +12,16 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Local user data lives OUTSIDE the repo (C:/Users/<you>/daily_planner.json),
-# but ignore any stray copy that lands here.
+# Local user data lives outside the repo; ignore any stray copy that lands here.
 daily_planner.json
+daily_planner.json.bak
 *.local.json
+DailyPlanner/
+.daily_planner/
 
 # Local QA scratch
 .qa_out.log
 .qa_err.log
 .mockups/
 .gstack/
+docs/screenshots/.tmp/

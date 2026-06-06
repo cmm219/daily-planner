@@ -1,7 +1,7 @@
 """Visual QA harness for the daily-planner Flet app.
 
-Serves the REAL app in web mode against a TEMP data file -- the real
-C:\\Users\\Cmcna\\daily_planner.json is never opened or written. Flet 0.80 renders
+Serves the real app in web mode against a temporary data file; your normal
+planner data file is never opened or written. Flet 0.80 renders
 to a CanvasKit canvas, so DOM-selector clicking is infeasible; instead the app is
 driven by its OWN handlers in-process. A `?qa=<subtab>` query param opens the
 settings dialog on a given subtab so a screenshotter can capture each state.
@@ -46,8 +46,8 @@ def _seed_temp_data_file():
     tab = data["tabs"][0]["data"]
     tab["top_priorities"] = [
         {"text": "Send Invoice", "done": False, "dateAdded": "2026-06-04"},
-        {"text": "Work on Github", "done": True, "dateAdded": "2026-06-04"},
-        {"text": "Make video advertising PCM", "done": False, "dateAdded": "2026-06-04"},
+        {"text": "Publish project update", "done": True, "dateAdded": "2026-06-04"},
+        {"text": "Draft customer follow-up", "done": False, "dateAdded": "2026-06-04"},
     ]
     tab["important"] = [{"text": "Review settings UI", "done": False, "dateAdded": "2026-06-04"}]
     # Seed a month of history + archived tasks so the recap has real content.
@@ -113,7 +113,7 @@ def main():
 
     temp_path = _seed_temp_data_file()
     print(f"[qa_visual] temp data file: {temp_path}")
-    print(f"[qa_visual] real data file is UNTOUCHED")
+    print(f"[qa_visual] normal planner data file is UNTOUCHED")
 
     # Suppress the auto-opened browser tab (WEB_BROWSER view calls this).
     webbrowser.open = lambda *a, **k: True

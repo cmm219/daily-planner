@@ -2,7 +2,7 @@
 
 Flet 0.80 renders to a canvas, so we drive the real handler methods the buttons /
 keys are wired to, against a stub Page, and assert the side effects (data mutations,
-JSON persistence, dialogs). The real daily_planner.json is never touched.
+JSON persistence, dialogs). The user's normal planner data file is never touched.
 
 Covers: tab switch / add / close / rename, theme toggle, add row, archive row
 (+ guards), checkbox, text change + blur auto-delete, score, undo/redo, snackbar,

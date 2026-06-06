@@ -5,7 +5,7 @@ we instantiate the REAL DailyPlanner against a stub Page and drive the SAME hand
 methods the gear icon / Ctrl+, wire up. This proves: the dialog builds, every subtab
 pane builds without error, editing a hex mutates the draft, and Save persists to disk.
 
-The real C:\\Users\\Cmcna\\daily_planner.json is never touched: dp.DATA_FILE is
+The user's normal planner data file is never touched: dp.DATA_FILE is
 redirected to a tmp file for the whole test.
 """
 import json
