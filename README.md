@@ -45,6 +45,14 @@ The app opens as a Flet desktop window and stores planner data on your machine.
 
 ## Data Location
 
+Your planner stays on your machine. Daily Planner stores everything in a local JSON file and does not sync, upload, or send your data anywhere.
+
+- No account required.
+- No cloud sync.
+- No analytics.
+- No server.
+- No data collection.
+
 By default, Daily Planner stores one JSON file outside the repo:
 
 - Windows: `%APPDATA%\DailyPlanner\daily_planner.json`

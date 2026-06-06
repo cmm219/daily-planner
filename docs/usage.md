@@ -13,7 +13,13 @@ Daily Planner is local-first. It does not require an account or cloud service.
 
 ## Local Data
 
-The app stores planner data in a single JSON file.
+Your planner stays on your machine. Daily Planner stores everything in a local JSON file and does not sync, upload, or send your data anywhere.
+
+- No account required.
+- No cloud sync.
+- No analytics.
+- No server.
+- No data collection.
 
 Default locations:
 
