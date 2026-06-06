@@ -50,6 +50,8 @@ The settings panel supports:
 
 The blue planner headers are not fixed. Open the gear menu, choose the Sections tab, then rename labels like `TOP PRIORITIES`, hide sections you do not use, or add custom sections for your own workflow.
 
+![Editable section headers](screenshots/sections.png)
+
 ## Month In Review Playback
 
 Month in Review summarizes logged days, completed tasks, gratitude, and lessons for the selected month. Press `Play` to turn the recap into a guided playback view so you can review the month card by card.

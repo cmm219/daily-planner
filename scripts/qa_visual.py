@@ -15,6 +15,7 @@ Then screenshot:
     http://127.0.0.1:8771/?qa=colors       settings -> Colors
     http://127.0.0.1:8771/?qa=headers      settings -> Headers / Bold
     http://127.0.0.1:8771/?qa=fonts        settings -> Fonts
+    http://127.0.0.1:8771/?qa=sections     settings -> Sections
     http://127.0.0.1:8771/?qa=presets      settings -> Presets
     http://127.0.0.1:8771/?qa=recap        Month-in-Review dialog (seeded history)
     http://127.0.0.1:8771/?qa=play         recap playback mode
@@ -36,6 +37,7 @@ SUBTAB_BY_KEY = {
     "colors": "Colors",
     "headers": "Headers / Bold",
     "fonts": "Fonts",
+    "sections": "Sections",
     "presets": "Presets",
 }
 

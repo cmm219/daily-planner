@@ -24,9 +24,13 @@ Daily Planner is a local-first desktop planner for organizing daily work, custom
 | --- | --- |
 | ![Main planner](docs/screenshots/main.png) | ![Settings dialog](docs/screenshots/settings.png) |
 
-| Month in Review | Playback |
+| Editable Sections | Month in Review |
 | --- | --- |
-| ![Month in Review](docs/screenshots/month-review.png) | ![Playback mode](docs/screenshots/playback.png) |
+| ![Editable section headers](docs/screenshots/sections.png) | ![Month in Review](docs/screenshots/month-review.png) |
+
+| Playback |
+| --- |
+| ![Playback mode](docs/screenshots/playback.png) |
 
 ![Month in Review playback](docs/screenshots/playback.gif)
 
